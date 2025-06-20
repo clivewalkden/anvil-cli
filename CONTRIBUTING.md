@@ -1,5 +1,5 @@
 <!-- omit in toc -->
-# Contributing to anil-ctl
+# Contributing to anvil-cli
 
 First off, thanks for taking the time to contribute! ❤️
 

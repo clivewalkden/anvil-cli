@@ -1,5 +1,7 @@
 # Anvil
 
+![GitHub Release](https://img.shields.io/github/v/release/clivewalkden/anvil-cli)
+
 A CLI tool to manage Magento Docker environments — wraps `docker compose`, runs Magento/WordPress tooling inside containers, and syncs configurable Docker template files from a remote repository.
 
 ## Features

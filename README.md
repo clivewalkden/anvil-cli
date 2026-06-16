@@ -53,13 +53,26 @@ Use `-v`, `-vv`, or `-vvv` to increase log verbosity. All commands inherit these
 
 ## Commands
 
+### `anvil init`
+
+Interactively creates a `docker-sync.yaml` configuration file in the current directory. Prompts for required fields (PHP, MySQL, Redis versions), server provider, and optional feature flags, writing a commented config file ready for `anvil sync`.
+
+Selecting **CoreFinity** as the server provider additionally prompts for `cf_remote_bin_dir` (the remote bin directory used by CoreFinity backup scripts). This value is written to `docker-sync.yaml` and applied to `.docker/config.env` automatically during `anvil sync`.
+
+```sh
+anvil init
+```
+
+---
+
 ### `anvil sync`
 
-Syncs Docker template files from the remote template repository into the current project. Skips files listed in `.anvilignore`. Use `--force` to overwrite add-only files.
+Syncs Docker template files from the remote template repository into the current project. Validates `docker-sync.yaml` before running — missing required fields are reported upfront. Skips files listed in `.anvilignore`. Use `--force` to overwrite add-only files.
 
 ```sh
 anvil sync
 anvil sync --force
+anvil sync --dry-run
 ```
 
 ---
@@ -171,11 +184,13 @@ anvil db import -y                   # Skip prompts
 | Var | Purpose |
 | --- | --- |
 | `SSH_HOST` | Remote SSH host |
-| `REMOTE_MAGENTO_DIR` | Remote Magento root |
-| `REMOTE_PHP_BIN` | Remote PHP binary path |
-| `REMOTE_N98_MAGERUN_BIN` | Remote n98-magerun binary path |
+| `SERVER_PROVIDER` | Controls backup strategy (`CoreFinity`, `Sonassi`, or `GCloud`) |
+| `CF_REMOTE_BIN_DIR` | CoreFinity only — remote bin directory containing backup scripts |
+| `REMOTE_MAGENTO_DIR` | Remote Magento root (Sonassi / GCloud only) |
+| `REMOTE_PHP_BIN` | Remote PHP binary path (Sonassi / GCloud only) |
+| `REMOTE_N98_MAGERUN_BIN` | Remote n98-magerun binary path (all providers, Magento only) |
+| `REMOTE_WP_CLI_BIN` | Remote WP CLI binary path (Sonassi / GCloud, WordPress only) |
 | `REMOTE_DB_BACKUP_DIR` | Remote directory for DB dumps |
-| `REMOTE_WP_CLI_BIN` | Remote WP CLI binary (WordPress only) |
 | `APP_SCHEMA` | URL scheme for domain replacement (default: `https`) |
 | `LOCAL_DOMAINS` | Comma-separated local domains |
 | `REMOTE_DOMAINS` | Comma-separated live domains (replaced in download) |
@@ -184,7 +199,7 @@ anvil db import -y                   # Skip prompts
 
 **WordPress import** performs domain search-replace via WP CLI using `LOCAL_DOMAINS` / `REMOTE_DOMAINS`.
 
-WordPress commands require `EnableWordpress: true` in `docker-sync.yaml`.
+WordPress commands require `enable_wordpress: true` in `docker-sync.yaml`.
 
 ---
 
@@ -197,7 +212,16 @@ anvil media import --wordpress       # rsync WordPress uploads from remote
 anvil media import -y                # Skip prompts
 ```
 
-Uses `SSH_HOST` and `REMOTE_SHARED_DIR` from `.docker/config.env`. WordPress requires `EnableWordpress: true`.
+Uses these env vars from `.docker/config.env`:
+
+| Var | Purpose |
+| --- | --- |
+| `SSH_HOST` | Remote SSH host |
+| `SERVER_PORT` | SSH port (omit to use the default port 22) |
+| `REMOTE_SHARED_DIR` | Remote shared media directory |
+| `REMOTE_WP_DIR` | WordPress directory name under `REMOTE_SHARED_DIR` (default: `wp`) |
+
+WordPress requires `enable_wordpress: true` in `docker-sync.yaml`.
 
 ---
 
@@ -209,7 +233,10 @@ anvil files pull --all               # Copy entire /app from container → magen
 anvil files push <path>              # Copy magento/<path> from host → /app/<path>
 anvil files push --all               # Copy entire magento/ from host → /app/
 anvil files push <path> -y           # Skip permission-fix prompt after push
+anvil files diff <path>              # Show diff between host and container versions of a file
 ```
+
+`files diff` compares `magento/<path>` on the host against `/app/<path>` in the `fpm` container and prints a unified diff. If differences are found you are prompted to push (host → container), pull (container → host), or skip.
 
 ---
 
@@ -260,7 +287,7 @@ Runs the complete setup sequence in order:
 anvil wordpress <args>               # wp --path=/app/wp --color <args>
 ```
 
-Requires `EnableWordpress: true` in `docker-sync.yaml`. All arguments are passed directly to WP CLI inside the `fpm` container.
+Requires `enable_wordpress: true` in `docker-sync.yaml`. All arguments are passed directly to WP CLI inside the `fpm` container.
 
 ---
 
@@ -273,25 +300,55 @@ anvil system elasticsearch <args>    # docker compose exec elasticsearch <args>
 
 ---
 
+### `anvil completion` — Shell completion
+
+Generates a shell completion script. Once installed, pressing Tab completes subcommands and flags.
+
+```sh
+anvil completion bash
+anvil completion zsh
+anvil completion fish
+anvil completion powershell
+```
+
+Run `anvil completion --help` for shell-specific installation instructions.
+
+---
+
 ## Configuration
 
-Create `docker-sync.yaml` in your project root. Example:
+Create `docker-sync.yaml` in your project root using `anvil init` or by copying `example.config.yaml`. The three required fields are validated before `anvil sync` runs.
 
 ```yaml
-docker_template_version: "20250613"
-elasticsearch_version: "8.7"
-enable_kibana: false
-enable_hyva: false
-enable_varnish: false
-enable_wordpress: true
-enable_xdebug: false
-hyva_theme_name: "clientname"
-kibana_version: "8.11.4"
-mysql_version: "8.0"
+# --- Required ---
 php_version: "8.2"
-rabbitmq_version: "3.11"
+mysql_version: "8.0"
 redis_version: "7.0"
+
+# --- Server ---
+server_provider: "Sonassi"   # CoreFinity | Sonassi | GCloud
+
+# CoreFinity only — remote bin directory for backup scripts
+# cf_remote_bin_dir: "/home/corefinity/bin"
+
+# --- Optional services ---
+elasticsearch_version: "8.7"
+rabbitmq_version: "3.11"
+
+# --- Feature flags ---
+enable_kibana: false
+kibana_version: "8.11.4"
+
+enable_hyva: false
+hyva_theme_name: "clientname"
+
+enable_varnish: false
 varnish_version: "6.0"
+
+enable_wordpress: false
+enable_xdebug: false
+
+# --- Binary paths (inside the fpm container) ---
 php_binary: "/usr/local/bin/php"
 n98_binary: "/usr/local/bin/n98-magerun2"
 wp_cli_binary: "/usr/local/bin/wp"
@@ -301,6 +358,7 @@ wp_cli_binary: "/usr/local/bin/wp"
 
 | Flag | Effect |
 | --- | --- |
+| `server_provider` | Controls remote DB backup strategy — `CoreFinity` uses remote backup scripts; `Sonassi` / `GCloud` use n98-magerun2 directly |
 | `enable_wordpress: true` | Enables `anvil wordpress`, `anvil db *--wordpress`, `anvil media import --wordpress`, `anvil setup wordpress*` |
 | `elasticsearch_version: "8.x"` | `anvil setup run` calls `anvil setup elasticsearch` when version >= 8.0.0 |
 | `hyva_theme_name` | Used by template rendering for Hyva/Tailwind setup |
